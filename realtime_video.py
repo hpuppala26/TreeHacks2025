@@ -31,14 +31,14 @@ def start_realtime_feed():
     
     # Modify stereo matcher parameters for better depth perception
     stereo = cv2.StereoSGBM_create(
-        minDisparity=0,
-        numDisparities=256,  # Increased from 128 for wider depth range
-        blockSize=5,         # Reduced for better detail
-        P1=8 * 3 * 5**2,    # Adjusted for new blockSize
-        P2=32 * 3 * 5**2,   # Adjusted for new blockSize
-        disp12MaxDiff=1,
-        uniquenessRatio=10,  # Reduced to allow more matches
-        speckleWindowSize=100,
+        minDisparity=-16,  # Try negative value
+        numDisparities=192,  # Reduced slightly
+        blockSize=7,      # Increased slightly
+        P1=8 * 3 * 7**2,
+        P2=32 * 3 * 7**2,
+        disp12MaxDiff=2,  # Increased tolerance
+        uniquenessRatio=8,  # More lenient
+        speckleWindowSize=50,  # Reduced
         speckleRange=2,
         mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
     )
@@ -46,11 +46,9 @@ def start_realtime_feed():
     # Modify WLS filter parameters
     right_matcher = cv2.ximgproc.createRightMatcher(stereo)
     wls_filter = cv2.ximgproc.createDisparityWLSFilter(stereo)
-    wls_filter.setLambda(8000)    # Controls smoothness
-    wls_filter.setSigmaColor(1.2)  # Controls color-dependent filtering
-    
-    # Additional WLS parameters
-    wls_filter.setLRCthresh(24)    # Left-right consistency check threshold
+    wls_filter.setLambda(4000)  # Reduced smoothness
+    wls_filter.setSigmaColor(2.0)  # Increased color sensitivity
+    wls_filter.setLRCthresh(32)  # More lenient consistency check
     wls_filter.setDepthDiscontinuityRadius(7)  # Radius for depth discontinuity detection
 
     def process_frame(frame):
@@ -63,51 +61,76 @@ def start_realtime_feed():
         return edges, frame
     
     def compute_depth(left_frame, right_frame):
-        # Convert to grayscale
-        left_gray = cv2.cvtColor(left_frame, cv2.COLOR_BGR2GRAY)
-        right_gray = cv2.cvtColor(right_frame, cv2.COLOR_BGR2GRAY)
-        
-        # Apply bilateral filter with adjusted parameters
-        left_filtered = cv2.bilateralFilter(left_gray, d=5, sigmaColor=50, sigmaSpace=50)
-        right_filtered = cv2.bilateralFilter(right_gray, d=5, sigmaColor=50, sigmaSpace=50)
-        
-        # Compute disparities
-        left_disp = stereo.compute(left_filtered, right_filtered)
-        right_disp = right_matcher.compute(right_filtered, left_filtered)
-        
-        # Convert to correct format
-        left_disp = left_disp.astype(np.float32) / 16.0
-        right_disp = right_disp.astype(np.float32) / 16.0
-        
-        # Apply WLS filtering
-        filtered_disp = wls_filter.filter(left_disp, left_gray, disparity_map_right=right_disp)
-        
-        # Apply temporal smoothing with adjusted weights
-        if not hasattr(compute_depth, 'previous_disp'):
+        try:
+            # Convert to grayscale
+            left_gray = cv2.cvtColor(left_frame, cv2.COLOR_BGR2GRAY)
+            right_gray = cv2.cvtColor(right_frame, cv2.COLOR_BGR2GRAY)
+            
+            # Apply bilateral filter with adjusted parameters
+            left_filtered = cv2.bilateralFilter(left_gray, d=5, sigmaColor=50, sigmaSpace=50)
+            right_filtered = cv2.bilateralFilter(right_gray, d=5, sigmaColor=50, sigmaSpace=50)
+            
+            # Compute disparities
+            left_disp = stereo.compute(left_filtered, right_filtered)
+            right_disp = right_matcher.compute(right_filtered, left_filtered)
+            
+            # Check if disparity computation failed
+            if left_disp is None or right_disp is None:
+                print("Warning: Disparity computation failed")
+                return compute_depth.previous_disp, compute_depth.previous_color
+            
+            # Convert to correct format
+            left_disp = left_disp.astype(np.float32) / 16.0
+            right_disp = right_disp.astype(np.float32) / 16.0
+            
+            # Apply WLS filtering
+            filtered_disp = wls_filter.filter(left_disp, left_gray, disparity_map_right=right_disp)
+            
+            # Check if the filtered disparity is valid
+            if np.all(filtered_disp == 0) or np.all(np.isnan(filtered_disp)):
+                print("Warning: Invalid filtered disparity map")
+                if hasattr(compute_depth, 'previous_disp'):
+                    return compute_depth.previous_disp, compute_depth.previous_color
+            
+            # Apply temporal smoothing with adjusted weights
+            if not hasattr(compute_depth, 'previous_disp'):
+                compute_depth.previous_disp = filtered_disp.copy()
+                compute_depth.previous_color = None
+            else:
+                if compute_depth.previous_disp is not None:
+                    # Use more aggressive smoothing when disparity changes dramatically
+                    diff = np.mean(np.abs(filtered_disp - compute_depth.previous_disp))
+                    alpha = 0.8 if diff < 10 else 0.95  # More smoothing for large changes
+                    filtered_disp = (filtered_disp * alpha + compute_depth.previous_disp * (1-alpha))
+            
+            # Normalize disparity with adjusted range
+            disparity_normalized = cv2.normalize(filtered_disp, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+            disparity_normalized = disparity_normalized.astype(np.uint8)
+            
+            # Apply final smoothing
+            disparity_normalized = cv2.medianBlur(disparity_normalized, 5)
+            
+            # Create color visualization
+            disparity_color = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_JET)
+            
+            # Store current results for next frame
             compute_depth.previous_disp = filtered_disp.copy()
-        else:
-            if compute_depth.previous_disp is not None:
-                filtered_disp = (filtered_disp * 0.8 + compute_depth.previous_disp * 0.2)  # More weight to current frame
-        
-        compute_depth.previous_disp = filtered_disp.copy()
-        
-        # Normalize disparity with adjusted range
-        disparity_normalized = cv2.normalize(filtered_disp, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
-        disparity_normalized = disparity_normalized.astype(np.uint8)
-        
-        # Optional: Invert the colormap if needed
-        # disparity_normalized = 255 - disparity_normalized
-        
-        # Apply final smoothing
-        disparity_normalized = cv2.medianBlur(disparity_normalized, 5)
-        
-        # Create color visualization
-        disparity_color = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_JET)
-        
-        return filtered_disp, disparity_color
+            compute_depth.previous_color = disparity_color.copy()
+            
+            return filtered_disp, disparity_color
+            
+        except Exception as e:
+            print(f"Error in depth computation: {e}")
+            if hasattr(compute_depth, 'previous_disp'):
+                return compute_depth.previous_disp, compute_depth.previous_color
+            else:
+                # Return a blank depth map if no previous frame
+                blank = np.zeros_like(left_frame)
+                return blank, blank
 
-    # Initialize the previous_disp attribute
+    # Initialize the previous frame attributes
     compute_depth.previous_disp = None
+    compute_depth.previous_color = None
 
     def create_overlay(edges, depth_map, alpha=0.7):
         """
