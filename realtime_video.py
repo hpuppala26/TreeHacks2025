@@ -4,8 +4,12 @@ import numpy as np
 
 def start_realtime_feed():
     # Initialize YOLO model
-    model = YOLO("yolov8n.pt")
-    
+    try:
+        model = YOLO("yolov8n.pt", task='detect')
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        return
+
     # Initialize cameras
     main_cam = cv2.VideoCapture(0)
     spatial_cam = cv2.VideoCapture(1)
@@ -25,17 +29,18 @@ def start_realtime_feed():
     cv2.namedWindow('Spatial Camera', cv2.WINDOW_NORMAL)
     cv2.namedWindow('Edge Detection', cv2.WINDOW_NORMAL)
     
-    # Initialize stereo matcher
+    # Initialize stereo matcher with more stable parameters
     stereo = cv2.StereoSGBM_create(
         minDisparity=0,
-        numDisparities=128,  # must be divisible by 16
-        blockSize=9,
-        P1=8 * 3 * 9 ** 2,  # First parameter controlling disparity smoothness
-        P2=32 * 3 * 9 ** 2,  # Second parameter controlling disparity smoothness
+        numDisparities=128,
+        blockSize=11,
+        P1=8 * 3 * 11**2,
+        P2=32 * 3 * 11**2,
         disp12MaxDiff=1,
-        uniquenessRatio=10,
-        speckleWindowSize=100,
-        speckleRange=32
+        uniquenessRatio=15,
+        speckleWindowSize=200,
+        speckleRange=2,
+        mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
     )
 
     def process_frame(frame):
@@ -52,16 +57,37 @@ def start_realtime_feed():
         left_gray = cv2.cvtColor(left_frame, cv2.COLOR_BGR2GRAY)
         right_gray = cv2.cvtColor(right_frame, cv2.COLOR_BGR2GRAY)
         
+        # Apply bilateral filter to reduce noise while preserving edges
+        left_filtered = cv2.bilateralFilter(left_gray, d=7, sigmaColor=75, sigmaSpace=75)
+        right_filtered = cv2.bilateralFilter(right_gray, d=7, sigmaColor=75, sigmaSpace=75)
+        
         # Compute disparity
-        disparity = stereo.compute(left_gray, right_gray).astype(np.float32) / 16.0
+        disparity = stereo.compute(left_filtered, right_filtered).astype(np.float32) / 16.0
+        
+        # Initialize previous_disp if not already done
+        if not hasattr(compute_depth, 'previous_disp'):
+            compute_depth.previous_disp = disparity.copy()
+        else:
+            # Only apply temporal smoothing if previous_disp exists and is not None
+            if compute_depth.previous_disp is not None:
+                disparity = (disparity * 0.7 + compute_depth.previous_disp * 0.3)
+        
+        # Update previous_disp for next frame
+        compute_depth.previous_disp = disparity.copy()
         
         # Normalize disparity for visualization
         disparity_normalized = cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
         
-        # Apply colormap for better visualization
+        # Apply median blur to remove any remaining speckles
+        disparity_normalized = cv2.medianBlur(disparity_normalized, 5)
+        
+        # Apply colormap for visualization
         disparity_color = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_JET)
         
         return disparity, disparity_color
+
+    # Initialize the previous_disp attribute
+    compute_depth.previous_disp = None
 
     def create_overlay(edges, depth_map, alpha=0.7):
         """
