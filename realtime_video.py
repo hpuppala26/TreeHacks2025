@@ -29,19 +29,29 @@ def start_realtime_feed():
     cv2.namedWindow('Spatial Camera', cv2.WINDOW_NORMAL)
     cv2.namedWindow('Edge Detection', cv2.WINDOW_NORMAL)
     
-    # Initialize stereo matcher with more stable parameters
+    # Modify stereo matcher parameters for better depth perception
     stereo = cv2.StereoSGBM_create(
         minDisparity=0,
-        numDisparities=128,
-        blockSize=11,
-        P1=8 * 3 * 11**2,
-        P2=32 * 3 * 11**2,
+        numDisparities=256,  # Increased from 128 for wider depth range
+        blockSize=5,         # Reduced for better detail
+        P1=8 * 3 * 5**2,    # Adjusted for new blockSize
+        P2=32 * 3 * 5**2,   # Adjusted for new blockSize
         disp12MaxDiff=1,
-        uniquenessRatio=15,
-        speckleWindowSize=200,
+        uniquenessRatio=10,  # Reduced to allow more matches
+        speckleWindowSize=100,
         speckleRange=2,
         mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
     )
+
+    # Modify WLS filter parameters
+    right_matcher = cv2.ximgproc.createRightMatcher(stereo)
+    wls_filter = cv2.ximgproc.createDisparityWLSFilter(stereo)
+    wls_filter.setLambda(8000)    # Controls smoothness
+    wls_filter.setSigmaColor(1.2)  # Controls color-dependent filtering
+    
+    # Additional WLS parameters
+    wls_filter.setLRCthresh(24)    # Left-right consistency check threshold
+    wls_filter.setDepthDiscontinuityRadius(7)  # Radius for depth discontinuity detection
 
     def process_frame(frame):
         # Resize frame to ensure consistent dimensions
@@ -57,34 +67,44 @@ def start_realtime_feed():
         left_gray = cv2.cvtColor(left_frame, cv2.COLOR_BGR2GRAY)
         right_gray = cv2.cvtColor(right_frame, cv2.COLOR_BGR2GRAY)
         
-        # Apply bilateral filter to reduce noise while preserving edges
-        left_filtered = cv2.bilateralFilter(left_gray, d=7, sigmaColor=75, sigmaSpace=75)
-        right_filtered = cv2.bilateralFilter(right_gray, d=7, sigmaColor=75, sigmaSpace=75)
+        # Apply bilateral filter with adjusted parameters
+        left_filtered = cv2.bilateralFilter(left_gray, d=5, sigmaColor=50, sigmaSpace=50)
+        right_filtered = cv2.bilateralFilter(right_gray, d=5, sigmaColor=50, sigmaSpace=50)
         
-        # Compute disparity
-        disparity = stereo.compute(left_filtered, right_filtered).astype(np.float32) / 16.0
+        # Compute disparities
+        left_disp = stereo.compute(left_filtered, right_filtered)
+        right_disp = right_matcher.compute(right_filtered, left_filtered)
         
-        # Initialize previous_disp if not already done
+        # Convert to correct format
+        left_disp = left_disp.astype(np.float32) / 16.0
+        right_disp = right_disp.astype(np.float32) / 16.0
+        
+        # Apply WLS filtering
+        filtered_disp = wls_filter.filter(left_disp, left_gray, disparity_map_right=right_disp)
+        
+        # Apply temporal smoothing with adjusted weights
         if not hasattr(compute_depth, 'previous_disp'):
-            compute_depth.previous_disp = disparity.copy()
+            compute_depth.previous_disp = filtered_disp.copy()
         else:
-            # Only apply temporal smoothing if previous_disp exists and is not None
             if compute_depth.previous_disp is not None:
-                disparity = (disparity * 0.7 + compute_depth.previous_disp * 0.3)
+                filtered_disp = (filtered_disp * 0.8 + compute_depth.previous_disp * 0.2)  # More weight to current frame
         
-        # Update previous_disp for next frame
-        compute_depth.previous_disp = disparity.copy()
+        compute_depth.previous_disp = filtered_disp.copy()
         
-        # Normalize disparity for visualization
-        disparity_normalized = cv2.normalize(disparity, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        # Normalize disparity with adjusted range
+        disparity_normalized = cv2.normalize(filtered_disp, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+        disparity_normalized = disparity_normalized.astype(np.uint8)
         
-        # Apply median blur to remove any remaining speckles
+        # Optional: Invert the colormap if needed
+        # disparity_normalized = 255 - disparity_normalized
+        
+        # Apply final smoothing
         disparity_normalized = cv2.medianBlur(disparity_normalized, 5)
         
-        # Apply colormap for visualization
+        # Create color visualization
         disparity_color = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_JET)
         
-        return disparity, disparity_color
+        return filtered_disp, disparity_color
 
     # Initialize the previous_disp attribute
     compute_depth.previous_disp = None
