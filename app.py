@@ -5,12 +5,30 @@ import numpy as np
 import time
 from ultralytics import YOLO
 import random
+import base64
+import atexit
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Load YOLO model
-model = YOLO("yolov8n.pt")  # Small YOLOv8 model
+# Load YOLO model (this can be changed to a larger object detection dataset from YOLO later on)
+model = YOLO("yolov8n.pt")
+
+# Initialize camera captures
+main_cam = cv2.VideoCapture(0)  # Main camera
+spatial_cam = cv2.VideoCapture(1)  # Spatial awareness camera
+
+def process_frame(frame):
+    # Convert to grayscale for edge detection
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    # Canny edge detection
+    edges = cv2.Canny(blurred, threshold1=100, threshold2=200)
+    
+    return edges
 
 @app.route("/")
 def home():
@@ -19,12 +37,21 @@ def home():
 @app.route("/detect", methods=["POST"])
 def detect_obstacles():
     try:
-        file = request.files["image"]
-        image = np.frombuffer(file.read(), np.uint8)
-        img = cv2.imdecode(image, cv2.IMREAD_COLOR)
+        # Capture frames from both cameras
+        ret_main, main_frame = main_cam.read()
+        ret_spatial, spatial_frame = spatial_cam.read()
+        
+        if not (ret_main and ret_spatial):
+            raise Exception("Failed to capture from one or both cameras")
 
-        # Run YOLO detection
-        results = model(img)
+        # Process main camera frame
+        main_edges = process_frame(main_frame)
+        
+        # Process spatial awareness camera frame
+        spatial_edges = process_frame(spatial_frame)
+
+        # Run YOLO detection on main frame
+        results = model(main_frame)
         detected_objects = []
 
         for result in results:
@@ -32,36 +59,42 @@ def detect_obstacles():
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 confidence = float(box.conf[0])
                 label = result.names[int(box.cls[0])]
+                
+                detected_objects.append({
+                    "object": label,
+                    "confidence": confidence,
+                    "bbox": [x1, y1, x2, y2]
+                })
 
-                detected_objects.append({"object": label, "confidence": confidence, "bbox": [x1, y1, x2, y2]})
+        # Encode processed frames to base64 for sending
+        _, main_buffer = cv2.imencode('.jpg', main_edges)
+        _, spatial_buffer = cv2.imencode('.jpg', spatial_edges)
+        
+        main_edges_b64 = base64.b64encode(main_buffer).decode('utf-8')
+        spatial_edges_b64 = base64.b64encode(spatial_buffer).decode('utf-8')
 
-        # Send obstacle data to dashboard
-        socketio.emit("obstacle_data", {"objects": detected_objects})
+        # Send processed data to dashboard
+        socketio.emit("processed_data", {
+            "objects": detected_objects,
+            "main_edges": main_edges_b64,
+            "spatial_edges": spatial_edges_b64
+        })
 
-        return jsonify({"status": "success", "objects": detected_objects})
+        return jsonify({
+            "status": "success",
+            "objects": detected_objects
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)})
 
-# ✅ Auto-send obstacle data every 5 seconds
-def auto_send_fake_obstacles():
-    while True:
-        fake_data = {
-            "objects": [
-                {"object": "helicopter", "bbox": [random.randint(50, 750), random.randint(50, 400), random.randint(50, 750) + 50, random.randint(50, 400) + 50]},
-                {"object": "fleet_of_birds", "bbox": [random.randint(50, 750), random.randint(50, 400), random.randint(50, 750) + 50, random.randint(50, 400) + 50]},
-                {"object": "aeroplane", "bbox": [random.randint(50, 750), random.randint(50, 400), random.randint(50, 750) + 50, random.randint(50, 400) + 50]},
-            ]
-        }
+# Cleanup function
+def cleanup():
+    main_cam.release()
+    spatial_cam.release()
 
-
-        print("Sending fake obstacle data:", fake_data)
-        socketio.emit("obstacle_data", fake_data)
-        time.sleep(5)  # Send data every 5 seconds
-
-# Run the auto data sender in the background
-import threading
-threading.Thread(target=auto_send_fake_obstacles, daemon=True).start()
+# Register cleanup function
+atexit.register(cleanup)
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)

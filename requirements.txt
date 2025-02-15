@@ -1,0 +1,9 @@
+pygame
+socketio
+ultralytics
+opencv-python
+flask
+flask_socketio
+numpy
+matplotlib
+Pillow

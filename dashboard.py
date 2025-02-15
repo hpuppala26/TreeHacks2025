@@ -2,6 +2,9 @@ import pygame
 import socketio
 import random
 import time
+import base64
+import io
+from PIL import Image
 
 # Initialize Pygame
 pygame.init()
@@ -35,6 +38,10 @@ avoid_timer = 0  # Tracks how long the plane should avoid
 # WebSocket client
 sio = socketio.Client()
 
+# Add these variables after other initializations
+edge_surface_main = pygame.Surface((WIDTH//2, HEIGHT//2))
+edge_surface_spatial = pygame.Surface((WIDTH//2, HEIGHT//2))
+
 @sio.on("connect")
 def on_connect():
     print("Connected to Flask server!")
@@ -51,14 +58,43 @@ def receive_data(data):
         obstacle_y = obj["bbox"][1] + (obj["bbox"][3] - obj["bbox"][1]) // 2  # Center of object
         obstacles.append({"x": obstacle_x, "y": obstacle_y, "label": obj["object"]})
 
+@sio.on("processed_data")
+def receive_processed_data(data):
+    global obstacles, edge_surface_main, edge_surface_spatial
+    
+    # Handle obstacle data
+    obstacles.clear()
+    for obj in data["objects"]:
+        obstacle_x = obj["bbox"][0] + (obj["bbox"][2] - obj["bbox"][0]) // 2
+        obstacle_y = obj["bbox"][1] + (obj["bbox"][3] - obj["bbox"][1]) // 2
+        obstacles.append({"x": obstacle_x, "y": obstacle_y, "label": obj["object"]})
+    
+    # Convert edge detection images from base64
+    main_edges_data = base64.b64decode(data["main_edges"])
+    spatial_edges_data = base64.b64decode(data["spatial_edges"])
+    
+    # Convert to pygame surfaces
+    main_img = Image.open(io.BytesIO(main_edges_data))
+    spatial_img = Image.open(io.BytesIO(spatial_edges_data))
+    
+    main_img = main_img.resize((WIDTH//2, HEIGHT//2))
+    spatial_img = spatial_img.resize((WIDTH//2, HEIGHT//2))
+    
+    edge_surface_main = pygame.image.fromstring(main_img.tobytes(), main_img.size, main_img.mode)
+    edge_surface_spatial = pygame.image.fromstring(spatial_img.tobytes(), spatial_img.size, spatial_img.mode)
+
 sio.connect("http://127.0.0.1:5000")
 
 def draw():
     screen.fill(WHITE)
-
+    
+    # Draw edge detection results
+    screen.blit(edge_surface_main, (0, 0))
+    screen.blit(edge_surface_spatial, (WIDTH//2, 0))
+    
     # Draw airplane image
-    screen.blit(plane_img, (plane_x - 30, plane_y - 30))  # Center the plane
-
+    screen.blit(plane_img, (plane_x - 30, plane_y - 30))
+    
     # Draw obstacles
     for obstacle in obstacles:
         pygame.draw.circle(screen, RED, (obstacle["x"], obstacle["y"]), 20)
