@@ -7,12 +7,15 @@ from ultralytics import YOLO
 import random
 import base64
 import atexit
+import json
+from Spatial_Simulation.state import simState  # Add this import
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Global variable to store the latest point cloud data
+# Global variables
 current_point_cloud = None
+sim_state = simState()  # Create instance of simState
 
 # Load YOLO model (this can be changed to a larger object detection dataset from YOLO later on)
 model = YOLO("yolov8n.pt")
@@ -98,8 +101,31 @@ def update_point_cloud():
         data = request.json
         point_cloud = np.array(data['point_cloud'])
         
+        # Update both global and simulation state
         global current_point_cloud
         current_point_cloud = point_cloud
+        sim_state.surrounding_objects_point_cloud = point_cloud  # Update simulation state
+        
+        # Validate the data was properly written to sim_state
+        print("\nValidating sim_state.surrounding_objects_point_cloud:")
+        print(f"Shape: {sim_state.surrounding_objects_point_cloud.shape}")
+        print("\nLast 5 entries in sim_state:")
+        print("-" * 50)
+        if len(sim_state.surrounding_objects_point_cloud) >= 5:
+            for i, point in enumerate(sim_state.surrounding_objects_point_cloud[-5:], 1):
+                print(f"Point {len(sim_state.surrounding_objects_point_cloud)-5+i}: {point}")
+        else:
+            print("Less than 5 points in cloud:")
+            for i, point in enumerate(sim_state.surrounding_objects_point_cloud, 1):
+                print(f"Point {i}: {point}")
+        print("-" * 50)
+        
+        # Save to JSON for persistence
+        try:
+            with open('test_point_cloud.json', 'w') as f:
+                json.dump({'point_cloud': point_cloud.tolist()}, f, indent=4)
+        except Exception as e:
+            print(f"Error saving to JSON: {e}")
         
         print("\nPoint Cloud Update Received:")
         print(f"Total points in cloud: {len(point_cloud)}")
