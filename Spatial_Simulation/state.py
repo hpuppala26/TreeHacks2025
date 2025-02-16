@@ -35,22 +35,15 @@
 #     # write to this for the point cloud
 #     surrounding_objects_point_cloud: np.ndarray
     
-#     # Center point of the primary object (in global coordinates)
-#     primary_center: np.ndarray = None
-        
-
-
-#     # Serial port configuration
-#     PORT = "/dev/tty.usbserial-120"  # Change this to your port
-#     BAUDRATE = 115200
-#     ser = serial.Serial(PORT, BAUDRATE, timeout=1)
+    # Center point of the primary object (in global coordinates)
+    primary_center: np.ndarray = None
     
+    point_cloud = None  # Add this line to store point cloud data
     
-    
-#     def integrate_acceleration(self):
-#         """
-#         Integrate acceleration to get velocity in local coordinates
-#         Uses trapezoidal integration for better accuracy
+    def integrate_acceleration(self):
+        """
+        Integrate acceleration to get velocity in local coordinates
+        Uses trapezoidal integration for better accuracy
         
 #         Current acceleration is stored in self.acceleration (m/s²)
 #         Updates self.velocity (m/s)
@@ -714,8 +707,25 @@ class simState:
                 alpha=0.6,
                 s=5
             )
-
-            # Velocity vector
+            
+            # Plot the dynamic surrounding point cloud if available
+            if self.surrounding_objects_point_cloud is not None and len(self.surrounding_objects_point_cloud) > 0:
+                # Ensure points are in correct shape (3, N)
+                if self.surrounding_objects_point_cloud.shape[1] == 3:
+                    points = self.surrounding_objects_point_cloud.T
+                else:
+                    points = self.surrounding_objects_point_cloud
+                    
+                # Plot the surrounding points
+                ax.scatter(
+                    points[0], points[1], points[2],
+                    c='r',  # Different color to distinguish from primary object
+                    alpha=0.5,
+                    s=2,
+                    label='Surrounding Points'
+                )
+            
+            # Plot velocity vector
             velocity_magnitude = np.linalg.norm(self.velocity)
             if velocity_magnitude > 0:
                 normalized_velocity = self.velocity / velocity_magnitude
@@ -746,11 +756,12 @@ class simState:
                 f'Position: [{self.position[0]:.1f}, {self.position[1]:.1f}, {self.position[2]:.1f}]\n'
                 f'Velocity: {velocity_magnitude:.2f} m/s\n'
                 f'Acceleration: {accel_magnitude:.2f} m/s²\n'
-                f'Raw accel: [{self.acceleration[0]:.2f}, {self.acceleration[1]:.2f}, {self.acceleration[2]:.2f}]'
+                f'Points in cloud: {len(self.surrounding_objects_point_cloud) if self.surrounding_objects_point_cloud is not None else 0}'
             )
-
-            ax.set_box_aspect([1, 1, 1])
-
+            
+            ax.set_box_aspect([1,1,1])
+            ax.legend()
+            
             return tuple(ax.get_children())
 
         ani = animation.FuncAnimation(
@@ -797,12 +808,77 @@ class simState:
         # Initialize world points
         n_world_points = 100
         self.world_points = np.random.uniform(-10, 10, (3, n_world_points))
+        
+        # Initialize other attributes
+        self.surrounding_objects_point_cloud = np.array([])
+        self.primary_center = np.zeros(3)
 
-        # ✅ Start sensor update loop in a separate thread
-        threading.Thread(target=self.update_state, daemon=True).start()
+        # Load test point cloud data
+        try:
+            with open('test_point_cloud.json', 'r') as f:
+                data = json.load(f)
+                self.surrounding_objects_point_cloud = np.array(data['point_cloud'])
+                print("\nLoaded test point cloud data:")
+                print(f"Shape: {self.surrounding_objects_point_cloud.shape}")
+                print("\nLast 5 entries:")
+                print("-" * 50)
+                for i, point in enumerate(self.surrounding_objects_point_cloud[-5:], 1):
+                    print(f"Point {len(self.surrounding_objects_point_cloud)-5+i}: {point}")
+                print("-" * 50)
+        except Exception as e:
+            print(f"Error loading test point cloud: {e}")
+            self.surrounding_objects_point_cloud = np.array([])
+        
+        self.point_cloud = None  # Add this line to store point cloud data
 
-        # ✅ Start animation
-        self.animate_scene(num_frames=200)
+    def set_point_cloud(self, points):
+        """
+        Set the point cloud data for visualization
+        Args:
+            points: numpy array of shape (N, 3) containing point cloud coordinates
+        """
+        self.point_cloud = points
+        print(f"Point cloud set with {len(points)} points")
+    
+    def transform_points(self, points):
+        """
+        Transform point cloud based on current position and orientation
+        Args:
+            points: numpy array of shape (N, 3)
+        Returns:
+            transformed points: numpy array of shape (N, 3)
+        """
+        # Create rotation matrix from current orientation
+        R = self.get_rotation_matrix()  # You'll need to implement this based on your orientation representation
+        
+        # Apply rotation and translation to all points
+        transformed = np.dot(points, R.T) + self.position
+        
+        return transformed
+    
+    def get_rotation_matrix(self):
+        """
+        Get the current rotation matrix based on orientation
+        Returns:
+            R: 3x3 rotation matrix
+        """
+        # Implement based on how you represent orientation
+        # This is a placeholder that returns identity matrix
+        return np.eye(3)
+
+    def update_surrounding_point_cloud(self, new_points: np.ndarray) -> None:
+        """
+        Updates the surrounding objects point cloud with new data
+        Args:
+            new_points: numpy array of shape (N, 3) containing new point cloud data
+        """
+        if new_points is not None and len(new_points) > 0:
+            self.surrounding_objects_point_cloud = new_points
+            print(f"\nUpdated surrounding point cloud with {len(new_points)} points")
+            print(f"Sample of first 5 points:")
+            print(new_points[:5] if len(new_points) >= 5 else new_points)
+        else:
+            print("Warning: Received empty point cloud data")
 
 if __name__ == "__main__":
     print("🚀 Starting Simulation...")

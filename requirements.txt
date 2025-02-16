@@ -7,6 +7,5 @@ flask_socketio
 numpy
 matplotlib
 Pillow
-pytorch
 timm
 open3d
