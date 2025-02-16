@@ -11,6 +11,9 @@ import atexit
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# Global variable to store the latest point cloud data
+current_point_cloud = None
+
 # Load YOLO model (this can be changed to a larger object detection dataset from YOLO later on)
 model = YOLO("yolov8n.pt")
 
@@ -87,6 +90,33 @@ def detect_obstacles():
 
     except Exception as e:
         return jsonify({"error": str(e)})
+
+@app.route("/point_cloud", methods=["POST"])
+def update_point_cloud():
+    """Endpoint to receive and store point cloud data"""
+    try:
+        data = request.json
+        point_cloud = np.array(data['point_cloud'])
+        
+        global current_point_cloud
+        current_point_cloud = point_cloud
+        
+        print(f"Received point cloud with shape: {point_cloud.shape}")
+        return jsonify({"status": "success", "points_received": len(point_cloud)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+@app.route("/point_cloud", methods=["GET"])
+def get_point_cloud():
+    """Endpoint to retrieve the latest point cloud data"""
+    global current_point_cloud
+    if current_point_cloud is not None:
+        return jsonify({
+            "status": "success",
+            "point_cloud": current_point_cloud.tolist(),
+            "shape": current_point_cloud.shape
+        })
+    return jsonify({"status": "no_data"}), 404
 
 # Cleanup function
 def cleanup():

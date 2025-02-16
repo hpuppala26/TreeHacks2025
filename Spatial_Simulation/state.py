@@ -28,6 +28,7 @@ class simState:
     primary_object_point_cloud: np.ndarray
     
     # Define an array that defines the point cloud of all surrounding objects:
+    # write to this for the point cloud
     surrounding_objects_point_cloud: np.ndarray
     
     # Center point of the primary object (in global coordinates)

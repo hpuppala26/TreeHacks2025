@@ -6,6 +6,8 @@ from camera_thread import ThreadedCamera
 from discretize import Discretizer
 import time
 from point_cloud import CloudRenderer
+import requests
+import json
 
 def start_realtime_feed():
     # Initialize YOLO model with better performance settings
@@ -109,6 +111,42 @@ def start_realtime_feed():
     last_cloud_update = time.time()
     CLOUD_UPDATE_INTERVAL = 15.0  # Update point cloud every X seconds
 
+    def send_point_cloud(points):
+        """Send point cloud data to API with detailed logging"""
+        try:
+            # Log the data being sent
+            print("\nSending Point Cloud Data:")
+            print(f"Shape of point cloud: {points.shape}")
+            print(f"Sample of points being sent:")
+            print(points[:5] if len(points) > 5 else points)
+            
+            response = requests.post(
+                'http://localhost:5000/point_cloud',
+                json={'point_cloud': points.tolist()},
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            # Log the response
+            if response.status_code == 200:
+                response_data = response.json()
+                print("\nAPI Response:")
+                print(f"Status: SUCCESS")
+                print(f"Points successfully sent: {len(points)}")
+                print(f"Server received points: {response_data.get('points_received')}")
+            else:
+                print("\nAPI Response:")
+                print(f"Status: FAILED")
+                print(f"Status code: {response.status_code}")
+                print(f"Error message: {response.text}")
+            
+        except requests.exceptions.ConnectionError:
+            print("\nERROR: Could not connect to API server")
+            print("Make sure the Flask server (app.py) is running on http://localhost:5000")
+        except Exception as e:
+            print(f"\nERROR: Unexpected error while sending point cloud data:")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error message: {str(e)}")
+
     # Process frames in main loop
     frame_count = 0
     while True:
@@ -145,7 +183,16 @@ def start_realtime_feed():
             print("Point Cloud Update at time:", time.strftime("%H:%M:%S"))
             print("="*50)
             
-            # Update both point clouds
+            # Update depth point cloud and send to API
+            depth_points = cloud_renderer.update_depth_cloud(depth_map)
+            if depth_points is not None and len(depth_points) > 0:
+                print("\nAttempting to send depth point cloud to API...")
+                send_point_cloud(depth_points)
+            else:
+                print("\nNo valid depth points generated to send")
+
+            
+            # Update edge point cloud (if needed)
             cloud_renderer.update_depth_cloud(depth_map)
             cloud_renderer.update_edge_cloud(main_edges)
             
