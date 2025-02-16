@@ -36,12 +36,23 @@ class simState:
     
     
     def propagate_dynamics_primary_object(self):
-        """Single step propagation for animation"""
-        self.current_time += self.dt  # Changed from time_step to dt
-        # Update position based on velocity
+        """
+        Single step propagation with both linear and angular motion
+        """
+        self.current_time += self.dt
+        
+        # Linear motion updates
+        self.velocity += self.acceleration * self.dt
         self.position += self.velocity * self.dt
-        # Could add more physics here (acceleration, etc.)
-        return self.position, self.velocity
+        
+        # Angular motion updates
+        self.angular_velocity += self.angular_acceleration * self.dt
+        self.orientation += self.angular_velocity * self.dt
+        
+        # Normalize orientation angles to [-π, π]
+        self.orientation = np.mod(self.orientation + np.pi, 2 * np.pi) - np.pi
+        
+        return self.position, self.velocity, self.orientation, self.angular_velocity
 
     def update_primary_center(self) -> None:
         
@@ -156,19 +167,32 @@ class simState:
 
     def generate_hull(self, points: np.ndarray):
         """
-        Generate simplified convex hull from points
-        """
-        # Downsample points first
-        downsampled_points = self.voxel_downsample(points, voxel_size=0.2)
+        Generate convex hull from points
         
+        Args:
+            points: Array of shape (3, N) containing points
+            
+        Returns:
+            vertices: Array of hull vertices
+            faces: Array of face indices
+        """
         # Convert from (3, N) to (N, 3) for ConvexHull
-        points_transformed = downsampled_points.T
+        points_transformed = points.T
         
         # Generate convex hull
         hull = ConvexHull(points_transformed)
         
-        return points_transformed[hull.vertices], hull.simplices
-    
+        # Get vertices in correct order
+        vertices = points_transformed[hull.vertices]
+        
+        # Ensure faces indices are within bounds
+        faces = hull.simplices
+        if np.max(faces) >= len(vertices):
+            # Reindex faces to match vertices
+            faces = faces % len(vertices)
+        
+        return vertices, faces
+
     def visualize_primary_object(self):
         """
         Visualize the primary object point cloud and its convex hull in 3D
@@ -219,7 +243,7 @@ class simState:
     
     def animate_scene(self, num_frames=200):
         """
-        Animate the scene with the primary body centered and world moving around it
+        Animate the scene with fixed primary body and rotating world points
         """
         fig = plt.figure(figsize=(12, 12))
         ax = fig.add_subplot(111, projection='3d')
@@ -227,51 +251,54 @@ class simState:
         def update(frame):
             ax.clear()
             
-            # Update dynamics using single step
+            # Update dynamics
             self.propagate_dynamics_primary_object()
             
-            # Move world points relative to velocity
-            relative_motion = -self.velocity.reshape(3, 1)  # Reshape for broadcasting
-            self.world_points += relative_motion * self.dt
+            # Instead of rotating primary body, rotate world points in opposite direction
+            inverse_orientation = -self.orientation
+            rotated_world_points = self.rotate_points(self.world_points, inverse_orientation)
             
-            # Plot primary object (centered)
-            vertices, faces = self.generate_hull(self.primary_object_point_cloud)
+            # Move world points relative to linear velocity
+            relative_motion = -self.velocity.reshape(3, 1)
+            rotated_world_points += relative_motion * self.dt
             
-            # Plot the point cloud
+            # Plot the fixed primary object (non-rotated)
+            try:
+                vertices, faces = self.generate_hull(self.primary_object_point_cloud)
+                ax.plot_trisurf(
+                    vertices[:,0], vertices[:,1], vertices[:,2],
+                    triangles=faces,
+                    alpha=0.3,
+                    color='r'
+                )
+            except ValueError as e:
+                print(f"Warning: Could not plot hull for frame {frame}: {e}")
+            
+            # Plot rotated world points
             ax.scatter(
-                self.primary_object_point_cloud[0],
-                self.primary_object_point_cloud[1],
-                self.primary_object_point_cloud[2],
-                c='b',
-                alpha=0.3,
-                s=1
-            )
-            
-            # Plot the convex hull
-            ax.plot_trisurf(
-                vertices[:,0], vertices[:,1], vertices[:,2],
-                triangles=faces,
-                alpha=0.3,
-                color='r'
-            )
-            
-            # Plot world points
-            ax.scatter(
-                self.world_points[0],
-                self.world_points[1],
-                self.world_points[2],
+                rotated_world_points[0],
+                rotated_world_points[1],
+                rotated_world_points[2],
                 c='g',
                 alpha=0.6,
                 s=5
             )
             
-            # Plot velocity vector
+            # Plot linear velocity vector
             velocity_magnitude = np.linalg.norm(self.velocity)
             if velocity_magnitude > 0:
                 normalized_velocity = self.velocity / velocity_magnitude
                 ax.quiver(0, 0, 0,
                          normalized_velocity[0], normalized_velocity[1], normalized_velocity[2],
                          color='blue', alpha=0.8, length=velocity_magnitude)
+            
+            # Plot angular velocity vector
+            angular_magnitude = np.linalg.norm(self.angular_velocity)
+            if angular_magnitude > 0:
+                normalized_angular = self.angular_velocity / angular_magnitude
+                ax.quiver(0, 0, 0,
+                         normalized_angular[0], normalized_angular[1], normalized_angular[2],
+                         color='red', alpha=0.8, length=angular_magnitude)
             
             # Set consistent view
             ax.set_xlim([-10, 10])
@@ -280,20 +307,25 @@ class simState:
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
-            ax.set_title(f'Frame {frame}, Velocity: {np.linalg.norm(self.velocity):.2f} m/s')
             
-            # Ensure the aspect ratio is equal
+            # Update title with both linear and angular information
+            ax.set_title(
+                f'Frame {frame}\n'
+                f'Linear Vel: {velocity_magnitude:.2f} m/s\n'
+                f'Angular Vel: {angular_magnitude:.2f} rad/s\n'
+                f'Orientation: [{self.orientation[0]:.1f}, {self.orientation[1]:.1f}, {self.orientation[2]:.1f}]'
+            )
+            
             ax.set_box_aspect([1,1,1])
             
-            # Return a tuple of artists
             return tuple(ax.get_children())
         
         ani = animation.FuncAnimation(
             fig, 
             update, 
             frames=num_frames,
-            interval=50,  # 50ms between frames
-            blit=False,  # Changed to False to avoid the _resize_id error
+            interval=50,
+            blit=False,
             repeat=True
         )
         
@@ -322,8 +354,11 @@ class simState:
         
         # Initialize physics parameters
         self.velocity = np.zeros(3)
+        self.acceleration = np.array([0.1, 0.0, 0.0])
         self.position = np.zeros(3)
         self.orientation = np.zeros(3)
+        self.angular_velocity = np.zeros(3)
+        self.angular_acceleration = np.array([0.02, 0.01, 0.0])
         
         # Initialize world points
         n_world_points = 100
@@ -332,7 +367,5 @@ class simState:
         # Initialize other attributes
         self.surrounding_objects_point_cloud = np.array([])
         self.primary_center = np.zeros(3)
-        self.acceleration = np.zeros(3)
-        self.angular_acceleration = np.zeros(3)
     
         
