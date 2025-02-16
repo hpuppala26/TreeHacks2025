@@ -45,7 +45,7 @@ class simState:
         Runs in a background thread.
         """
         while True:
-            #self.acceleration, self.orientation = self.read_sensor_data()
+            self.acceleration, self.orientation = self.read_sensor_data()
 
             # Apply dynamics update
             self.propagate_dynamics_primary_object()
@@ -289,9 +289,7 @@ def __init__(self):
         self.angular_acceleration = np.zeros(3)
 
         # ✅ Fetch real-time sensor values at startup
-        #self.acceleration, self.orientation = self.read_sensor_data()
-        self.acceleration = np.array([0.0, 0.0, 0.0])   # DELETE THIS LATER
-        self.orientation = np.array([0.0, 0.0, 0.0])   # DELETE THIS LATER
+        self.acceleration, self.orientation = self.read_sensor_data()
         print(f"🔄 INIT: Acceleration {self.acceleration}, Orientation {self.orientation}")
 
         # Initialize world points
@@ -323,4 +321,12 @@ def __init__(self):
 if __name__ == "__main__":
     print("🚀 Starting Simulation...")
     state = simState()
-    print("✅ update_state() WAS CALLED!")
+    
+    # Create and start the update thread
+    update_thread = threading.Thread(target=state.update_state, daemon=True)
+    update_thread.start()
+    
+    # Start the animation
+    state.animate_scene()
+    
+    print("✅ Simulation running!")
