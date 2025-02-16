@@ -1,7 +1,25 @@
 from state import simState
 import numpy as np
-import os
-import json
+import time
+import requests
+import threading
+
+def fetch_point_cloud(state):
+    """
+    Continuously fetch point cloud data from API
+    """
+    while True:
+        try:
+            response = requests.get('http://localhost:5000/point_cloud')
+            if response.status_code == 200:
+                data = response.json()
+                if 'point_cloud' in data:
+                    points = np.array(data['point_cloud'])
+                    state.update_surrounding_point_cloud(points)
+            time.sleep(0.1)  # Poll every 100ms
+        except Exception as e:
+            print(f"Error fetching point cloud: {e}")
+            time.sleep(1)  # Wait longer on error
 
 def main():
     # Create state and set initial conditions
@@ -16,27 +34,9 @@ def main():
     # state.angular_acceleration = np.array([0.02, 0.01, 0.0])  # constant angular acceleration
     state.angular_acceleration = np.zeros(3)  # Start with no rotation acceleration
 
-    # Load point cloud data if available
-    try:
-        # Get the directory of the current script and go up one level
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(current_dir)  # Go up one directory
-        point_cloud_path = os.path.join(parent_dir, 'test_point_cloud.json')
-        
-        print(f"Looking for point cloud data at: {point_cloud_path}")
-        
-        with open(point_cloud_path, 'r') as f:
-            point_cloud_data = json.load(f)
-            print("Successfully loaded point cloud data")
-            # You can now use point_cloud_data in your simulation
-            
-            # Add the point cloud data to the state
-            if 'point_cloud' in point_cloud_data:
-                points = np.array(point_cloud_data['point_cloud'])
-                state.set_point_cloud(points)  # Assuming there's a method to set point cloud data
-                print(f"Loaded {len(points)} points into simulation")
-    except Exception as e:
-        print(f"Error loading point cloud data: {e}")
+    # Start point cloud update thread
+    update_thread = threading.Thread(target=fetch_point_cloud, args=(state,), daemon=True)
+    update_thread.start()
     
     # Run animation
     state.animate_scene(num_frames=200)

@@ -328,6 +328,23 @@ class simState:
                 s=5
             )
             
+            # Plot the dynamic surrounding point cloud if available
+            if self.surrounding_objects_point_cloud is not None and len(self.surrounding_objects_point_cloud) > 0:
+                # Ensure points are in correct shape (3, N)
+                if self.surrounding_objects_point_cloud.shape[1] == 3:
+                    points = self.surrounding_objects_point_cloud.T
+                else:
+                    points = self.surrounding_objects_point_cloud
+                    
+                # Plot the surrounding points
+                ax.scatter(
+                    points[0], points[1], points[2],
+                    c='r',  # Different color to distinguish from primary object
+                    alpha=0.5,
+                    s=2,
+                    label='Surrounding Points'
+                )
+            
             # Plot velocity vector
             velocity_magnitude = np.linalg.norm(self.velocity)
             if velocity_magnitude > 0:
@@ -358,20 +375,12 @@ class simState:
                 f'Frame {frame}\n'
                 f'Position: [{self.position[0]:.1f}, {self.position[1]:.1f}, {self.position[2]:.1f}]\n'
                 f'Velocity: {velocity_magnitude:.2f} m/s\n'
-                f'Acceleration: {accel_magnitude:.2f} m/s²'
+                f'Acceleration: {accel_magnitude:.2f} m/s²\n'
+                f'Points in cloud: {len(self.surrounding_objects_point_cloud) if self.surrounding_objects_point_cloud is not None else 0}'
             )
             
             ax.set_box_aspect([1,1,1])
-            
-            # Add point cloud visualization if available
-            if self.point_cloud is not None:
-                # Transform point cloud based on current state
-                transformed_points = self.transform_points(self.point_cloud)
-                # Plot points (adjust color and size as needed)
-                ax.scatter(transformed_points[:, 0], 
-                          transformed_points[:, 1], 
-                          transformed_points[:, 2],
-                          c='b', s=1, alpha=0.5)
+            ax.legend()
             
             return tuple(ax.get_children())
         
@@ -537,6 +546,20 @@ class simState:
         # Implement based on how you represent orientation
         # This is a placeholder that returns identity matrix
         return np.eye(3)
+
+    def update_surrounding_point_cloud(self, new_points: np.ndarray) -> None:
+        """
+        Updates the surrounding objects point cloud with new data
+        Args:
+            new_points: numpy array of shape (N, 3) containing new point cloud data
+        """
+        if new_points is not None and len(new_points) > 0:
+            self.surrounding_objects_point_cloud = new_points
+            print(f"\nUpdated surrounding point cloud with {len(new_points)} points")
+            print(f"Sample of first 5 points:")
+            print(new_points[:5] if len(new_points) >= 5 else new_points)
+        else:
+            print("Warning: Received empty point cloud data")
 
 if __name__ == "__main__":
     state = simState()
