@@ -36,7 +36,7 @@ class simState:
     # Center point of the primary object (in global coordinates)
     primary_center: np.ndarray = None
     
-    
+    point_cloud = None  # Add this line to store point cloud data
     
     def integrate_acceleration(self):
         """
@@ -363,6 +363,16 @@ class simState:
             
             ax.set_box_aspect([1,1,1])
             
+            # Add point cloud visualization if available
+            if self.point_cloud is not None:
+                # Transform point cloud based on current state
+                transformed_points = self.transform_points(self.point_cloud)
+                # Plot points (adjust color and size as needed)
+                ax.scatter(transformed_points[:, 0], 
+                          transformed_points[:, 1], 
+                          transformed_points[:, 2],
+                          c='b', s=1, alpha=0.5)
+            
             return tuple(ax.get_children())
         
         ani = animation.FuncAnimation(
@@ -491,6 +501,43 @@ class simState:
             print(f"Error loading test point cloud: {e}")
             self.surrounding_objects_point_cloud = np.array([])
         
+        self.point_cloud = None  # Add this line to store point cloud data
+
+    def set_point_cloud(self, points):
+        """
+        Set the point cloud data for visualization
+        Args:
+            points: numpy array of shape (N, 3) containing point cloud coordinates
+        """
+        self.point_cloud = points
+        print(f"Point cloud set with {len(points)} points")
+    
+    def transform_points(self, points):
+        """
+        Transform point cloud based on current position and orientation
+        Args:
+            points: numpy array of shape (N, 3)
+        Returns:
+            transformed points: numpy array of shape (N, 3)
+        """
+        # Create rotation matrix from current orientation
+        R = self.get_rotation_matrix()  # You'll need to implement this based on your orientation representation
+        
+        # Apply rotation and translation to all points
+        transformed = np.dot(points, R.T) + self.position
+        
+        return transformed
+    
+    def get_rotation_matrix(self):
+        """
+        Get the current rotation matrix based on orientation
+        Returns:
+            R: 3x3 rotation matrix
+        """
+        # Implement based on how you represent orientation
+        # This is a placeholder that returns identity matrix
+        return np.eye(3)
+
 if __name__ == "__main__":
     state = simState()
     state.update_state()
