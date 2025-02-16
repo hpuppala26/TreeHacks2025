@@ -2,10 +2,13 @@
 
 #define ADXL345_ADDR 0x53  // ADXL345 default I2C address
 
+// A4 -> SCL
+// A5 -> SDA
+
 void setup() {
     Wire.begin();
     Serial.begin(115200);
-    
+   
 
     Serial.println("🔍 Checking for ADXL345...");
     Wire.beginTransmission(ADXL345_ADDR);
@@ -44,7 +47,6 @@ void loop() {
         Serial.println("❌ Error reading ADXL345 data.");
     }
 
-    delay(1000);
 }
 
 void readGRange() {
