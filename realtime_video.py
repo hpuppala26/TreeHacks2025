@@ -144,7 +144,11 @@ def start_realtime_feed():
             print("\n" + "="*50)
             print("Point Cloud Update at time:", time.strftime("%H:%M:%S"))
             print("="*50)
-            cloud_renderer.update_cloud(depth_map, main_edges)
+            
+            # Update both point clouds
+            cloud_renderer.update_depth_cloud(depth_map)
+            cloud_renderer.update_edge_cloud(main_edges)
+            
             last_cloud_update = current_time
         
         # Update point cloud visualization
