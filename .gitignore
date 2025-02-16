@@ -6,3 +6,5 @@ __pycache__/
 
 # test json
 test_point_cloud.json
+venv/
+myenv/
