@@ -46,7 +46,6 @@ void loop() {
     } else {
         Serial.println("❌ Error reading ADXL345 data.");
     }
-
 }
 
 void readGRange() {
