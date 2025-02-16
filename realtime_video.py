@@ -5,6 +5,7 @@ import torch
 from camera_thread import ThreadedCamera
 from discretize import Discretizer
 import time
+from point_cloud import CloudRenderer
 
 def start_realtime_feed():
     # Initialize YOLO model with better performance settings
@@ -103,6 +104,11 @@ def start_realtime_feed():
     last_discretize_time = time.time()
     DISCRETIZE_INTERVAL = 2.0  # Seconds between discretization
 
+    # Initialize CloudRenderer
+    cloud_renderer = CloudRenderer(FRAME_WIDTH, FRAME_HEIGHT)
+    last_cloud_update = time.time()
+    CLOUD_UPDATE_INTERVAL = 15.0  # Update point cloud every X seconds
+
     # Process frames in main loop
     frame_count = 0
     while True:
@@ -133,6 +139,24 @@ def start_realtime_feed():
             discretizer.print_latest()
             last_discretize_time = current_time
         
+        # Update point cloud at regular intervals
+        if current_time - last_cloud_update >= CLOUD_UPDATE_INTERVAL:
+            print("\n" + "="*50)
+            print("Point Cloud Update at time:", time.strftime("%H:%M:%S"))
+            print("="*50)
+            
+            # Update both point clouds
+            cloud_renderer.update_depth_cloud(depth_map)
+            cloud_renderer.update_edge_cloud(main_edges)
+            
+            last_cloud_update = current_time
+        
+        # Update point cloud visualization
+        if cloud_renderer.is_running:
+            if not cloud_renderer.update_visualization():
+                print("Failed to update visualization")
+                break
+        
         # Run YOLO detection with optimized settings
         results = model(main_frame_resized, conf=0.5, iou=0.45)  # Adjusted confidence thresholds
         
@@ -141,9 +165,9 @@ def start_realtime_feed():
             annotated_frame = result.plot()
             
             # Display frames
-            cv2.imshow('Main Camera', annotated_frame)
-            cv2.imshow('Edge Detection', main_edges)
-            cv2.imshow('Depth Map', depth_visualization)
+            # cv2.imshow('Main Camera', annotated_frame)
+            # cv2.imshow('Edge Detection', main_edges)
+            # cv2.imshow('Depth Map', depth_visualization)
             cv2.imshow('Overlay', combined_overlay)
         
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -154,6 +178,7 @@ def start_realtime_feed():
     # You could save final_data here if needed
     
     # Cleanup
+    cloud_renderer.close()
     main_cam.release()
     cv2.destroyAllWindows()
 
