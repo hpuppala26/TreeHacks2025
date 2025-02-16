@@ -358,7 +358,7 @@ class simState:
         self.position = np.zeros(3)
         self.orientation = np.zeros(3)
         self.angular_velocity = np.zeros(3)
-        self.angular_acceleration = np.array([0.02, 0.01, 0.0])
+        self.angular_acceleration = np.zeros(3)
         
         # Initialize world points
         n_world_points = 100

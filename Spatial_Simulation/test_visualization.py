@@ -11,7 +11,9 @@ def main():
     
     # Set initial angular conditions
     state.angular_velocity = np.array([0.5, 0.3, 0.1])  # initial rotation rates (rad/s)
-    state.angular_acceleration = np.array([0.02, 0.01, 0.0])  # constant angular acceleration
+    # state.angular_acceleration = np.array([0.02, 0.01, 0.0])  # constant angular acceleration
+    state.angular_acceleration = np.zeros(3)  # Start with no rotation acceleration
+
     
     # Run animation
     state.animate_scene(num_frames=200)
