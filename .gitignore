@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 *$py.class
 .pytest_cache/
+
+# test json
+test_point_cloud.json

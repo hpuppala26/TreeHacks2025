@@ -126,7 +126,19 @@ def start_realtime_feed():
                 headers={'Content-Type': 'application/json'}
             )
             
-            # Log the response
+            # Save to JSON file
+            try:
+                json_data = {
+                    'point_cloud': points.tolist()
+                }
+                with open('test_point_cloud.json', 'w') as f:
+                    json.dump(json_data, f, indent=4)
+                print("\nSuccessfully saved point cloud to test_point_cloud.json")
+                print(f"Saved {len(points)} points")
+            except Exception as e:
+                print(f"\nError saving to JSON file: {e}")
+            
+            # Log the API response
             if response.status_code == 200:
                 response_data = response.json()
                 print("\nAPI Response:")

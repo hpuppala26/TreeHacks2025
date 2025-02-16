@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import ConvexHull
 import matplotlib.animation as animation
+import json
 
 
 # Define State Classs
@@ -368,5 +369,21 @@ class simState:
         # Initialize other attributes
         self.surrounding_objects_point_cloud = np.array([])
         self.primary_center = np.zeros(3)
-    
+
+        # Load test point cloud data
+        try:
+            with open('test_point_cloud.json', 'r') as f:
+                data = json.load(f)
+                self.surrounding_objects_point_cloud = np.array(data['point_cloud'])
+                print("\nLoaded test point cloud data:")
+                print(f"Shape: {self.surrounding_objects_point_cloud.shape}")
+                print("\nLast 5 entries:")
+                print("-" * 50)
+                for i, point in enumerate(self.surrounding_objects_point_cloud[-5:], 1):
+                    print(f"Point {len(self.surrounding_objects_point_cloud)-5+i}: {point}")
+                print("-" * 50)
+        except Exception as e:
+            print(f"Error loading test point cloud: {e}")
+            self.surrounding_objects_point_cloud = np.array([])
+        
         

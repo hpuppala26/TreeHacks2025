@@ -101,9 +101,26 @@ def update_point_cloud():
         global current_point_cloud
         current_point_cloud = point_cloud
         
-        print(f"Received point cloud with shape: {point_cloud.shape}")
-        return jsonify({"status": "success", "points_received": len(point_cloud)})
+        print("\nPoint Cloud Update Received:")
+        print(f"Total points in cloud: {len(point_cloud)}")
+        print("\nLast 5 entries of surrounding_objects_point_cloud:")
+        print("-" * 50)
+        if len(point_cloud) >= 5:
+            for i, point in enumerate(point_cloud[-5:], 1):
+                print(f"Point {len(point_cloud)-5+i}: {point}")
+        else:
+            print("Less than 5 points in cloud:")
+            for i, point in enumerate(point_cloud, 1):
+                print(f"Point {i}: {point}")
+        print("-" * 50)
+        
+        return jsonify({
+            "status": "success", 
+            "points_received": len(point_cloud),
+            "last_five_points": point_cloud[-5:].tolist() if len(point_cloud) >= 5 else point_cloud.tolist()
+        })
     except Exception as e:
+        print(f"Error in update_point_cloud: {e}")
         return jsonify({"error": str(e)}), 400
 
 @app.route("/point_cloud", methods=["GET"])
