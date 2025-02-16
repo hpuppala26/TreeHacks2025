@@ -2,70 +2,69 @@ import cv2
 from ultralytics import YOLO
 import numpy as np
 import torch
-from torch.nn.functional import interpolate
+from camera_thread import ThreadedCamera
 
 def start_realtime_feed():
-    # Initialize YOLO model
+    # Initialize YOLO model with better performance settings
     try:
         model = YOLO("yolov8n.pt", task='detect')
+        model.fuse()
     except Exception as e:
         print(f"Error loading model: {e}")
         return
 
-    # Initialize MiDaS
-    midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small")
-    midas.to('cuda' if torch.cuda.is_available() else 'cpu')
-    midas.eval()
+    # Initialize MiDaS with smaller model
+    try:
+        midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small", trust_repo=True)
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        midas.to(device)
+        midas.eval()
+        
+        if device == 'cuda':
+            torch.backends.cudnn.benchmark = True
+    except Exception as e:
+        print(f"Error loading MiDaS: {e}")
+        return
     
     # Load transforms
     midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
     transform = midas_transforms.small_transform
 
-    # Initialize cameras (only need main camera now)
-    main_cam = cv2.VideoCapture(0)
-    
-    # Set consistent resolution
-    FRAME_WIDTH = 640
-    FRAME_HEIGHT = 480
-    main_cam.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
-    main_cam.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
-    
+    # Initialize threaded camera
+    FRAME_WIDTH = 480
+    FRAME_HEIGHT = 360
+    main_cam = ThreadedCamera(0, FRAME_WIDTH, FRAME_HEIGHT)
+
     # Set up display windows
     cv2.namedWindow('Main Camera', cv2.WINDOW_NORMAL)
     cv2.namedWindow('Edge Detection', cv2.WINDOW_NORMAL)
     cv2.namedWindow('Depth Map', cv2.WINDOW_NORMAL)
+    cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
 
     def process_frame(frame):
-        # Resize frame to ensure consistent dimensions
-        frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
-        # Convert to grayscale for edge detection
+        # Optimize edge detection parameters
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edges = cv2.Canny(blurred, threshold1=100, threshold2=200)
+        edges = cv2.Canny(gray, threshold1=100, threshold2=200)
         return edges, frame
 
     def compute_depth(frame):
         try:
             # Transform input for MiDaS
             img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            input_batch = transform(img).to('cuda' if torch.cuda.is_available() else 'cpu')
+            input_batch = transform(img).to(device)
 
-            # Compute depth
+            # Compute depth with optimized settings
             with torch.no_grad():
                 prediction = midas(input_batch)
                 prediction = torch.nn.functional.interpolate(
                     prediction.unsqueeze(1),
                     size=(FRAME_HEIGHT, FRAME_WIDTH),
-                    mode="bicubic",
+                    mode="bilinear",  # Changed from bicubic to bilinear for speed
                     align_corners=False,
                 ).squeeze()
 
             depth_map = prediction.cpu().numpy()
-            
-            # Normalize depth map
             depth_map = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-            
-            # Create color visualization
             depth_color = cv2.applyColorMap(depth_map, cv2.COLORMAP_MAGMA)
             
             return depth_map, depth_color
@@ -83,20 +82,33 @@ def start_realtime_feed():
             depth_map: Depth visualization (color)
             alpha: Transparency factor (0.0 to 1.0)
         """
+        # Ensure both images have the same dimensions
+        edges = cv2.resize(edges, (depth_map.shape[1], depth_map.shape[0]))
+        
         # Convert edges to color (BGR) for overlay
         edges_color = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+        
+        # Ensure both images have the same data type
+        edges_color = edges_color.astype(np.uint8)
+        depth_map = depth_map.astype(np.uint8)
         
         # Create overlay
         overlay = cv2.addWeighted(depth_map, alpha, edges_color, 1-alpha, 0)
         return overlay
 
+    # Process frames in main loop
+    frame_count = 0
     while True:
-        # Capture frame
+        # Skip frames for performance (process every 2nd frame)
         ret_main, main_frame = main_cam.read()
+        frame_count += 1
         
         if not ret_main:
             print("Error: Could not read from camera")
             break
+            
+        if frame_count % 2 != 0:  # Process every other frame
+            continue
             
         # Process frame
         main_edges, main_frame_resized = process_frame(main_frame)
@@ -107,8 +119,8 @@ def start_realtime_feed():
         # Create overlay of edges and depth
         combined_overlay = create_overlay(main_edges, depth_visualization)
         
-        # Run YOLO detection on main frame
-        results = model(main_frame_resized, show=False)
+        # Run YOLO detection with optimized settings
+        results = model(main_frame_resized, conf=0.5, iou=0.45)  # Adjusted confidence thresholds
         
         # Draw detection boxes
         for result in results:
@@ -120,10 +132,9 @@ def start_realtime_feed():
             cv2.imshow('Depth Map', depth_visualization)
             cv2.imshow('Overlay', combined_overlay)
         
-        # Break loop with 'q'
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-    
+
     # Cleanup
     main_cam.release()
     cv2.destroyAllWindows()
