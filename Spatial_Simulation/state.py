@@ -4,6 +4,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import ConvexHull
 import matplotlib.animation as animation
 import json
+import time
 
 
 # Define State Classs
@@ -374,6 +375,66 @@ class simState:
         )
         
         plt.show()
+
+    def read_sensor_data(self):
+        """
+        Reads the latest sensor data from the JSON file.
+        """
+        try:
+            with open("/Users/hrithikpuppala/Desktop/treehacks-2025/sensor_data.json", "r") as f:
+                sensor_data = json.load(f)
+
+            acceleration = np.array([
+                sensor_data["acceleration"]["AccX"],
+                sensor_data["acceleration"]["AccY"],
+                sensor_data["acceleration"]["AccZ"]
+            ])
+
+            orientation = np.array([
+                sensor_data["orientation"]["Roll"],
+                sensor_data["orientation"]["Pitch"],
+                sensor_data["orientation"]["Yaw"]
+            ])
+
+            return acceleration, orientation
+
+        except (FileNotFoundError, json.JSONDecodeError):
+            print(f"⚠️ Warning: Sensor file not found or corrupted, using default values")
+            return np.array([0.1, 0.0, 0.0]), np.zeros(3)  # Default values if file is missing
+
+    def update_state(self):
+        """
+        Continuously updates the state with the latest sensor data.
+        """
+        while True:
+            # ✅ Fetch latest sensor values
+            self.acceleration, self.orientation = self.read_sensor_data()
+
+            # ✅ Print updated values
+            print(f"📡 UPDATED Acceleration: {self.acceleration}")
+            print(f"📡 UPDATED Orientation: {self.orientation}")
+
+            # ✅ Apply dynamics update
+            self.propagate_dynamics_primary_object()
+
+            # ✅ Sleep before next update (adjustable)
+            time.sleep(0.5)  # Update every 0.5 seconds
+
+    def propagate_dynamics_primary_object(self):
+        """
+        Updates state variables using acceleration data in real-time.
+        """
+        self.current_time += self.dt
+
+        # ✅ Apply real-time acceleration updates
+        self.velocity += self.acceleration * self.dt
+        self.position += self.velocity * self.dt
+
+        # ✅ Apply real-time orientation updates
+        self.orientation = np.mod(self.orientation + np.pi, 2 * np.pi) - np.pi
+
+        print(f"🔄 State Updated: Position {self.position}, Velocity {self.velocity}, Orientation {self.orientation}")
+
     
     def __init__(self):
         # Create a sphere for the primary object
@@ -396,11 +457,13 @@ class simState:
         self.end_time = float('inf')  # For continuous animation
         self.dt = 0.1  # time step
         
+        self.acceleration, self.orientation = self.read_sensor_data()
+        
         # Initialize physics parameters
         self.velocity = np.zeros(3)
-        self.acceleration = np.array([0.1, 0.0, 0.0])
+        # self.acceleration = np.array([0.1, 0.0, 0.0])
         self.position = np.zeros(3)
-        self.orientation = np.zeros(3)
+        # self.orientation = np.zeros(3)
         self.angular_velocity = np.zeros(3)
         self.angular_acceleration = np.zeros(3)
         
@@ -428,4 +491,7 @@ class simState:
             print(f"Error loading test point cloud: {e}")
             self.surrounding_objects_point_cloud = np.array([])
         
+if __name__ == "__main__":
+    state = simState()
+    state.update_state()
         
