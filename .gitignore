@@ -1,0 +1,5 @@
+# Python cache files
+__pycache__/
+*.pyc
+*$py.class
+.pytest_cache/

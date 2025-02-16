@@ -41,6 +41,6 @@ def update_frame(geo_pos):
     return vehicle_icon, path_line
 
 # 4. Launch Animation
-ani = FuncAnimation(fig, update_frame, frames=frame_gen,
+ani = animation.FuncAnimation(fig, update_frame, frames=frame_gen,
                    interval=33, blit=True, cache_frame_data=False)
 plt.show()
