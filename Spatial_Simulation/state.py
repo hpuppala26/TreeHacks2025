@@ -4,6 +4,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import ConvexHull
 import matplotlib.animation as animation
 import json
+import time
 
 
 # Define State Classs
@@ -37,17 +38,49 @@ class simState:
     
     
     
+    def integrate_acceleration(self):
+        """
+        Integrate acceleration to get velocity in local coordinates
+        Uses trapezoidal integration for better accuracy
+        
+        Current acceleration is stored in self.acceleration (m/s²)
+        Updates self.velocity (m/s)
+        """
+        # Previous velocity + (average acceleration × time step)
+        self.velocity += self.acceleration * self.dt
+        
+        # Optional: Add damping to prevent unbounded velocity growth
+        damping = 0.99  # Slight damping factor
+        self.velocity *= damping
+        
+        return self.velocity
+    
+    def integrate_velocity(self):
+        """
+        Integrate velocity to get position in local coordinates
+        Uses trapezoidal integration
+        
+        Current velocity is stored in self.velocity (m/s)
+        Updates self.position (m)
+        """
+        # Previous position + (velocity × time step)
+        self.position += self.velocity * self.dt
+        
+        return self.position
+    
     def propagate_dynamics_primary_object(self):
         """
-        Single step propagation with both linear and angular motion
+        Propagate the dynamics of the primary object using current acceleration data
         """
         self.current_time += self.dt
         
-        # Linear motion updates
-        self.velocity += self.acceleration * self.dt
-        self.position += self.velocity * self.dt
+        # First integration: acceleration → velocity
+        self.integrate_acceleration()
         
-        # Angular motion updates
+        # Second integration: velocity → position
+        self.integrate_velocity()
+        
+        # Update angular motion (existing code)
         self.angular_velocity += self.angular_acceleration * self.dt
         self.orientation += self.angular_velocity * self.dt
         
@@ -245,7 +278,7 @@ class simState:
     
     def animate_scene(self, num_frames=200):
         """
-        Animate the scene with fixed primary body and rotating world points
+        Animate the scene with integrated motion from acceleration data
         """
         fig = plt.figure(figsize=(12, 12))
         ax = fig.add_subplot(111, projection='3d')
@@ -253,30 +286,39 @@ class simState:
         def update(frame):
             ax.clear()
             
-            # Update dynamics
+            # Update dynamics using acceleration integration
             self.propagate_dynamics_primary_object()
             
-            # Instead of rotating primary body, rotate world points in opposite direction
-            inverse_orientation = -self.orientation
-            rotated_world_points = self.rotate_points(self.world_points, inverse_orientation)
+            # Move world points relative to integrated motion
+            relative_position = -self.position.reshape(3, 1)
+            relative_rotation = -self.orientation
             
-            # Move world points relative to linear velocity
-            relative_motion = -self.velocity.reshape(3, 1)
-            rotated_world_points += relative_motion * self.dt
+            # First translate then rotate world points
+            translated_points = self.world_points + relative_position
+            rotated_world_points = self.rotate_points(translated_points, relative_rotation)
             
-            # Plot the fixed primary object (non-rotated)
-            try:
-                vertices, faces = self.generate_hull(self.primary_object_point_cloud)
-                ax.plot_trisurf(
-                    vertices[:,0], vertices[:,1], vertices[:,2],
-                    triangles=faces,
-                    alpha=0.3,
-                    color='r'
-                )
-            except ValueError as e:
-                print(f"Warning: Could not plot hull for frame {frame}: {e}")
+            # Plot the fixed primary object
+            vertices, faces = self.generate_hull(self.primary_object_point_cloud)
             
-            # Plot rotated world points
+            # Plot the point cloud (fixed)
+            ax.scatter(
+                self.primary_object_point_cloud[0],
+                self.primary_object_point_cloud[1],
+                self.primary_object_point_cloud[2],
+                c='b',
+                alpha=0.3,
+                s=1
+            )
+            
+            # Plot the convex hull (fixed)
+            ax.plot_trisurf(
+                vertices[:,0], vertices[:,1], vertices[:,2],
+                triangles=faces,
+                alpha=0.3,
+                color='r'
+            )
+            
+            # Plot transformed world points
             ax.scatter(
                 rotated_world_points[0],
                 rotated_world_points[1],
@@ -286,7 +328,7 @@ class simState:
                 s=5
             )
             
-            # Plot linear velocity vector
+            # Plot velocity vector
             velocity_magnitude = np.linalg.norm(self.velocity)
             if velocity_magnitude > 0:
                 normalized_velocity = self.velocity / velocity_magnitude
@@ -294,13 +336,14 @@ class simState:
                          normalized_velocity[0], normalized_velocity[1], normalized_velocity[2],
                          color='blue', alpha=0.8, length=velocity_magnitude)
             
-            # Plot angular velocity vector
-            angular_magnitude = np.linalg.norm(self.angular_velocity)
-            if angular_magnitude > 0:
-                normalized_angular = self.angular_velocity / angular_magnitude
+            # Plot acceleration vector
+            accel_magnitude = np.linalg.norm(self.acceleration)
+            if accel_magnitude > 0:
+                normalized_accel = self.acceleration / accel_magnitude
                 ax.quiver(0, 0, 0,
-                         normalized_angular[0], normalized_angular[1], normalized_angular[2],
-                         color='red', alpha=0.8, length=angular_magnitude)
+                         normalized_accel[0], normalized_accel[1], normalized_accel[2],
+                         color='red', alpha=0.8, length=accel_magnitude,
+                         linestyle='dashed')
             
             # Set consistent view
             ax.set_xlim([-10, 10])
@@ -310,12 +353,12 @@ class simState:
             ax.set_ylabel('Y')
             ax.set_zlabel('Z')
             
-            # Update title with both linear and angular information
+            # Update title with motion information
             ax.set_title(
                 f'Frame {frame}\n'
-                f'Linear Vel: {velocity_magnitude:.2f} m/s\n'
-                f'Angular Vel: {angular_magnitude:.2f} rad/s\n'
-                f'Orientation: [{self.orientation[0]:.1f}, {self.orientation[1]:.1f}, {self.orientation[2]:.1f}]'
+                f'Position: [{self.position[0]:.1f}, {self.position[1]:.1f}, {self.position[2]:.1f}]\n'
+                f'Velocity: {velocity_magnitude:.2f} m/s\n'
+                f'Acceleration: {accel_magnitude:.2f} m/s²'
             )
             
             ax.set_box_aspect([1,1,1])
@@ -332,6 +375,66 @@ class simState:
         )
         
         plt.show()
+
+    def read_sensor_data(self):
+        """
+        Reads the latest sensor data from the JSON file.
+        """
+        try:
+            with open("/Users/hrithikpuppala/Desktop/treehacks-2025/sensor_data.json", "r") as f:
+                sensor_data = json.load(f)
+
+            acceleration = np.array([
+                sensor_data["acceleration"]["AccX"],
+                sensor_data["acceleration"]["AccY"],
+                sensor_data["acceleration"]["AccZ"]
+            ])
+
+            orientation = np.array([
+                sensor_data["orientation"]["Roll"],
+                sensor_data["orientation"]["Pitch"],
+                sensor_data["orientation"]["Yaw"]
+            ])
+
+            return acceleration, orientation
+
+        except (FileNotFoundError, json.JSONDecodeError):
+            print(f"⚠️ Warning: Sensor file not found or corrupted, using default values")
+            return np.array([0.1, 0.0, 0.0]), np.zeros(3)  # Default values if file is missing
+
+    def update_state(self):
+        """
+        Continuously updates the state with the latest sensor data.
+        """
+        while True:
+            # ✅ Fetch latest sensor values
+            self.acceleration, self.orientation = self.read_sensor_data()
+
+            # ✅ Print updated values
+            print(f"📡 UPDATED Acceleration: {self.acceleration}")
+            print(f"📡 UPDATED Orientation: {self.orientation}")
+
+            # ✅ Apply dynamics update
+            self.propagate_dynamics_primary_object()
+
+            # ✅ Sleep before next update (adjustable)
+            time.sleep(0.5)  # Update every 0.5 seconds
+
+    def propagate_dynamics_primary_object(self):
+        """
+        Updates state variables using acceleration data in real-time.
+        """
+        self.current_time += self.dt
+
+        # ✅ Apply real-time acceleration updates
+        self.velocity += self.acceleration * self.dt
+        self.position += self.velocity * self.dt
+
+        # ✅ Apply real-time orientation updates
+        self.orientation = np.mod(self.orientation + np.pi, 2 * np.pi) - np.pi
+
+        print(f"🔄 State Updated: Position {self.position}, Velocity {self.velocity}, Orientation {self.orientation}")
+
     
     def __init__(self):
         # Create a sphere for the primary object
@@ -354,11 +457,13 @@ class simState:
         self.end_time = float('inf')  # For continuous animation
         self.dt = 0.1  # time step
         
+        self.acceleration, self.orientation = self.read_sensor_data()
+        
         # Initialize physics parameters
         self.velocity = np.zeros(3)
-        self.acceleration = np.array([0.1, 0.0, 0.0])
+        # self.acceleration = np.array([0.1, 0.0, 0.0])
         self.position = np.zeros(3)
-        self.orientation = np.zeros(3)
+        # self.orientation = np.zeros(3)
         self.angular_velocity = np.zeros(3)
         self.angular_acceleration = np.zeros(3)
         
@@ -386,4 +491,7 @@ class simState:
             print(f"Error loading test point cloud: {e}")
             self.surrounding_objects_point_cloud = np.array([])
         
+if __name__ == "__main__":
+    state = simState()
+    state.update_state()
         
