@@ -9,6 +9,45 @@ import threading
 # Define State Class
 class simState:
     
+    def __init__(self):
+        # Create a sphere for the primary object
+        radius = 1.0  
+        n_points = 1000  
+
+        # Generate sphere coordinates
+        phi = np.random.uniform(0, 2 * np.pi, n_points)
+        theta = np.arccos(np.random.uniform(-1, 1, n_points))
+
+        # Convert to Cartesian coordinates (3xN array)
+        self.primary_object_point_cloud = np.array([
+            radius * np.sin(theta) * np.cos(phi),
+            radius * np.sin(theta) * np.sin(phi),
+            radius * np.cos(theta)
+        ])
+
+        # Initialize physics parameters
+        self.current_time = 0.0
+        self.dt = 0.1
+        self.velocity = np.zeros(3)
+        self.position = np.zeros(3)
+        self.angular_velocity = np.array([0.0, 0.0, 0.1])
+        self.angular_acceleration = np.zeros(3)
+
+        # Fetch real-time sensor values at startup
+        #self.acceleration, self.orientation = self.read_sensor_data()
+        self.acceleration = np.array([0.0, 0.0, 0.0])   # DELETE THIS LATER
+        self.orientation = np.array([0.0, 0.0, 0.0])   # DELETE THIS LATER
+        print(f"🔄 INIT: Acceleration {self.acceleration}, Orientation {self.orientation}")
+
+        # Initialize world points
+        n_world_points = 100
+        self.world_points = np.random.uniform(-10, 10, (3, n_world_points))
+        
+        # Initialize other attributes
+        self.surrounding_objects_point_cloud = np.array([])
+        self.primary_center = np.zeros(3)
+        self.point_cloud = None
+
     def read_sensor_data(self):
         """
         Reads the latest sensor data from the JSON file in real-time.
@@ -45,7 +84,7 @@ class simState:
         Runs in a background thread.
         """
         while True:
-            self.acceleration, self.orientation = self.read_sensor_data()
+            #self.acceleration, self.orientation = self.read_sensor_data()
 
             # Apply dynamics update
             self.propagate_dynamics_primary_object()
@@ -61,6 +100,10 @@ class simState:
         # ✅ Apply acceleration updates
         self.velocity += self.acceleration * self.dt
         self.position += self.velocity * self.dt
+        
+        # ✅ Apply orientation updates
+        self.orientation += self.angular_velocity * self.dt
+        self.angular_velocity += self.angular_acceleration * self.dt
 
         # ✅ Normalize orientation angles
         self.orientation = np.mod(self.orientation + np.pi, 2 * np.pi) - np.pi
@@ -194,6 +237,7 @@ class simState:
                 f'Velocity: {velocity_magnitude:.2f} m/s\n'
                 f'Acceleration: {accel_magnitude:.2f} m/s²\n'
                 f'Points in cloud: {len(self.surrounding_objects_point_cloud) if self.surrounding_objects_point_cloud is not None else 0}'
+                f'Orientation: {self.orientation}'
             )
             
             ax.set_box_aspect([1,1,1])
@@ -264,60 +308,6 @@ class simState:
             print("Warning: Received empty point cloud data")
             
             
-def __init__(self):
-        # Create a sphere for the primary object
-        radius = 1.0  
-        n_points = 1000  
-
-        # Generate sphere coordinates
-        phi = np.random.uniform(0, 2 * np.pi, n_points)
-        theta = np.arccos(np.random.uniform(-1, 1, n_points))
-
-        # Convert to Cartesian coordinates (3xN array)
-        self.primary_object_point_cloud = np.array([
-            radius * np.sin(theta) * np.cos(phi),
-            radius * np.sin(theta) * np.sin(phi),
-            radius * np.cos(theta)
-        ])
-
-        # Initialize physics parameters
-        self.current_time = 0.0
-        self.dt = 0.1
-        self.velocity = np.zeros(3)
-        self.position = np.zeros(3)
-        self.angular_velocity = np.array([0.0, 0.0, 0.1])   # DELETE THIS LATER
-        self.angular_acceleration = np.zeros(3)
-
-        # ✅ Fetch real-time sensor values at startup
-        self.acceleration, self.orientation = self.read_sensor_data()
-        print(f"🔄 INIT: Acceleration {self.acceleration}, Orientation {self.orientation}")
-
-        # Initialize world points
-        n_world_points = 100
-        self.world_points = np.random.uniform(-10, 10, (3, n_world_points))
-        
-        # Initialize other attributes
-        self.surrounding_objects_point_cloud = np.array([])
-        self.primary_center = np.zeros(3)
-
-        # Load test point cloud data
-        # try:
-        #     with open('test_point_cloud.json', 'r') as f:
-        #         data = json.load(f)
-        #         self.surrounding_objects_point_cloud = np.array(data['point_cloud'])
-        #         print("\nLoaded test point cloud data:")
-        #         print(f"Shape: {self.surrounding_objects_point_cloud.shape}")
-        #         print("\nLast 5 entries:")
-        #         print("-" * 50)
-        #         for i, point in enumerate(self.surrounding_objects_point_cloud[-5:], 1):
-        #             print(f"Point {len(self.surrounding_objects_point_cloud)-5+i}: {point}")
-        #         print("-" * 50)
-        # except Exception as e:
-        #     print(f"Error loading test point cloud: {e}")
-        #     self.surrounding_objects_point_cloud = np.array([])
-        
-        self.point_cloud = None  # Add this line to store point cloud data
-
 if __name__ == "__main__":
     print("🚀 Starting Simulation...")
     state = simState()

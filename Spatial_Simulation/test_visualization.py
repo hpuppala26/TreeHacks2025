@@ -33,6 +33,12 @@ def main():
     state.angular_velocity = np.array([0, 0, 0])  # initial rotation rates (rad/s)
     # state.angular_acceleration = np.array([0.02, 0.01, 0.0])  # constant angular acceleration
     state.angular_acceleration = np.zeros(3)  # Start with no rotation acceleration
+    
+     # Initialize world points
+    n_world_points = 100
+    self.world_points = np.random.uniform(-10, 10, (3, n_world_points))
+    
+    
 
     # Start point cloud update thread
     update_thread = threading.Thread(target=fetch_point_cloud, args=(state,), daemon=True)
