@@ -3,6 +3,8 @@ from ultralytics import YOLO
 import numpy as np
 import torch
 from camera_thread import ThreadedCamera
+from discretize import Discretizer
+import time
 
 def start_realtime_feed():
     # Initialize YOLO model with better performance settings
@@ -96,6 +98,11 @@ def start_realtime_feed():
         overlay = cv2.addWeighted(depth_map, alpha, edges_color, 1-alpha, 0)
         return overlay
 
+    # Initialize discretizer
+    discretizer = Discretizer(rows=20, cols=40)
+    last_discretize_time = time.time()
+    DISCRETIZE_INTERVAL = 2.0  # Seconds between discretization
+
     # Process frames in main loop
     frame_count = 0
     while True:
@@ -119,6 +126,13 @@ def start_realtime_feed():
         # Create overlay of edges and depth
         combined_overlay = create_overlay(main_edges, depth_visualization)
         
+        # Discretize at regular intervals
+        current_time = time.time()
+        if current_time - last_discretize_time >= DISCRETIZE_INTERVAL:
+            discretizer.add_frame(main_edges, depth_map)
+            discretizer.print_latest()
+            last_discretize_time = current_time
+        
         # Run YOLO detection with optimized settings
         results = model(main_frame_resized, conf=0.5, iou=0.45)  # Adjusted confidence thresholds
         
@@ -135,6 +149,10 @@ def start_realtime_feed():
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+    # Save or process final data if needed
+    final_data = discretizer.get_history()
+    # You could save final_data here if needed
+    
     # Cleanup
     main_cam.release()
     cv2.destroyAllWindows()
