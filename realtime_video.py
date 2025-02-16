@@ -109,7 +109,7 @@ def start_realtime_feed():
     # Initialize CloudRenderer
     cloud_renderer = CloudRenderer(FRAME_WIDTH, FRAME_HEIGHT)
     last_cloud_update = time.time()
-    CLOUD_UPDATE_INTERVAL = 5.0  # Update point cloud every X seconds
+    CLOUD_UPDATE_INTERVAL = 2.0  # Update point cloud every X seconds
 
     def send_point_cloud(points):
         """Send point cloud data to API with detailed logging"""

@@ -25,12 +25,12 @@ def main():
     # Create state and set initial conditions
     state = simState()
     
-    # Set initial linear conditions
+    # Set initial linear conditions - swap X and Z components
     state.velocity = np.array([0.0, 0.0, 0.0])  # start from rest
-    state.acceleration = np.array([0.1, 0.05, 0.0])  # constant acceleration
+    state.acceleration = np.array([0.1, 0.05, 0.0])  # Z component moved to X
     
-    # Set initial angular conditions
-    state.angular_velocity = np.array([0.5, 0.3, 0.1])  # initial rotation rates (rad/s)
+    # Set initial angular conditions - swap X and Z components
+    state.angular_velocity = np.array([0.5, 0.3, 0.1])  # Z component moved to X
     # state.angular_acceleration = np.array([0.02, 0.01, 0.0])  # constant angular acceleration
     state.angular_acceleration = np.zeros(3)  # Start with no rotation acceleration
 

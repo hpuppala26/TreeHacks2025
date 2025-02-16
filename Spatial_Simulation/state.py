@@ -297,68 +297,74 @@ class simState:
             translated_points = self.world_points + relative_position
             rotated_world_points = self.rotate_points(translated_points, relative_rotation)
             
-            # Plot the fixed primary object
+            # Plot the fixed primary object - swap X and Z when plotting
             vertices, faces = self.generate_hull(self.primary_object_point_cloud)
             
-            # Plot the point cloud (fixed)
+            # Plot the point cloud (fixed) - swap X and Z coordinates
             ax.scatter(
-                self.primary_object_point_cloud[0],
-                self.primary_object_point_cloud[1],
-                self.primary_object_point_cloud[2],
+                self.primary_object_point_cloud[2],  # Was [0]
+                self.primary_object_point_cloud[1],  # Stays [1]
+                self.primary_object_point_cloud[0],  # Was [2]
                 c='b',
                 alpha=0.3,
                 s=1
             )
             
-            # Plot the convex hull (fixed)
+            # Plot the convex hull - swap X and Z coordinates
             ax.plot_trisurf(
-                vertices[:,0], vertices[:,1], vertices[:,2],
+                vertices[:,2],  # Was [:,0]
+                vertices[:,1],  # Stays [:,1]
+                vertices[:,0],  # Was [:,2]
                 triangles=faces,
                 alpha=0.3,
                 color='r'
             )
             
-            # Plot transformed world points
+            # Plot transformed world points - swap X and Z coordinates
             ax.scatter(
-                rotated_world_points[0],
-                rotated_world_points[1],
-                rotated_world_points[2],
+                rotated_world_points[2],  # Was [0]
+                rotated_world_points[1],  # Stays [1]
+                rotated_world_points[0],  # Was [2]
                 c='g',
                 alpha=0.6,
                 s=5
             )
             
-            # Plot the dynamic surrounding point cloud if available
+            # Plot the dynamic surrounding point cloud if available - swap X and Z coordinates
             if self.surrounding_objects_point_cloud is not None and len(self.surrounding_objects_point_cloud) > 0:
-                # Ensure points are in correct shape (3, N)
                 if self.surrounding_objects_point_cloud.shape[1] == 3:
                     points = self.surrounding_objects_point_cloud.T
                 else:
                     points = self.surrounding_objects_point_cloud
                     
-                # Plot the surrounding points
                 ax.scatter(
-                    points[0], points[1], points[2],
-                    c='r',  # Different color to distinguish from primary object
+                    points[2],  # Was [0]
+                    points[1],  # Stays [1]
+                    points[0],  # Was [2]
+                    c='r',
                     alpha=0.5,
                     s=2,
                     label='Surrounding Points'
                 )
             
-            # Plot velocity vector
+            # Plot velocity vector - swap X and Z components
             velocity_magnitude = np.linalg.norm(self.velocity)
             if velocity_magnitude > 0:
                 normalized_velocity = self.velocity / velocity_magnitude
                 ax.quiver(0, 0, 0,
-                         normalized_velocity[0], normalized_velocity[1], normalized_velocity[2],
+                         normalized_velocity[2],  # Was [0]
+                         normalized_velocity[1],  # Stays [1]
+                         normalized_velocity[0],  # Was [2]
                          color='blue', alpha=0.8, length=velocity_magnitude)
             
-            # Plot acceleration vector
+            # Plot acceleration vector - swap X and Z components
             accel_magnitude = np.linalg.norm(self.acceleration)
             if accel_magnitude > 0:
                 normalized_accel = self.acceleration / accel_magnitude
                 ax.quiver(0, 0, 0,
-                         normalized_accel[0], normalized_accel[1], normalized_accel[2],
+                         normalized_accel[2],  # Was [0]
+                         normalized_accel[1],  # Stays [1]
+                         normalized_accel[0],  # Was [2]
                          color='red', alpha=0.8, length=accel_magnitude,
                          linestyle='dashed')
             
@@ -366,14 +372,14 @@ class simState:
             ax.set_xlim([-10, 10])
             ax.set_ylim([-10, 10])
             ax.set_zlim([-10, 10])
-            ax.set_xlabel('X')
+            ax.set_xlabel('Z')
             ax.set_ylabel('Y')
-            ax.set_zlabel('Z')
+            ax.set_zlabel('X')
             
-            # Update title with motion information
+            # Update title with swapped position components
             ax.set_title(
                 f'Frame {frame}\n'
-                f'Position: [{self.position[0]:.1f}, {self.position[1]:.1f}, {self.position[2]:.1f}]\n'
+                f'Position: [{self.position[2]:.1f}, {self.position[1]:.1f}, {self.position[0]:.1f}]\n'
                 f'Velocity: {velocity_magnitude:.2f} m/s\n'
                 f'Acceleration: {accel_magnitude:.2f} m/s²\n'
                 f'Points in cloud: {len(self.surrounding_objects_point_cloud) if self.surrounding_objects_point_cloud is not None else 0}'
@@ -464,11 +470,11 @@ class simState:
         phi = np.random.uniform(0, 2*np.pi, n_points)
         theta = np.arccos(np.random.uniform(-1, 1, n_points))
         
-        # Convert to Cartesian coordinates (3xN array)
+        # Convert to Cartesian coordinates (3xN array) - swap X and Z components
         self.primary_object_point_cloud = np.array([
-            radius * np.sin(theta) * np.cos(phi),
-            radius * np.sin(theta) * np.sin(phi),
-            radius * np.cos(theta)
+            radius * np.cos(theta),  # This was X, now Z
+            radius * np.sin(theta) * np.sin(phi),  # Y stays the same
+            radius * np.sin(theta) * np.cos(phi)   # This was Z, now X
         ])
         
         # Initialize time parameters
